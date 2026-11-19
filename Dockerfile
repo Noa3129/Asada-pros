@@ -13,6 +13,6 @@ RUN npm ci --omit=dev --no-audit --no-fund
 COPY . .
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-	CMD wget -qO- http://127.0.0.1:8080/healthz || exit 1
+	CMD wget -qO- http://127.0.0.1:${PORT:-8080}/healthz || exit 1
 
 CMD ["node", "src/index.js"]
