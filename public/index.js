@@ -1,25 +1,22 @@
 "use strict";
-/**
- * @type {HTMLFormElement}
- */
-const form = document.getElementById("sj-form");
-/**
- * @type {HTMLInputElement}
- */
-const address = document.getElementById("sj-address");
-/**
- * @type {HTMLInputElement}
- */
-const searchEngine = document.getElementById("sj-search-engine");
-/**
- * @type {HTMLParagraphElement}
- */
-const error = document.getElementById("sj-error");
-/**
- * @type {HTMLPreElement}
- */
-const errorCode = document.getElementById("sj-error-code");
 
+// ---- Elements ----
+const startView = document.getElementById("start-view");
+const browserView = document.getElementById("browser-view");
+const form = document.getElementById("sj-form");
+const address = document.getElementById("sj-address");
+const searchEngine = document.getElementById("sj-search-engine");
+const error = document.getElementById("sj-error");
+const errorCode = document.getElementById("sj-error-code");
+const tbForm = document.getElementById("tb-form");
+const tbAddress = document.getElementById("tb-address");
+const btnBack = document.getElementById("btn-back");
+const btnForward = document.getElementById("btn-forward");
+const btnReload = document.getElementById("btn-reload");
+const btnHome = document.getElementById("btn-home");
+const progress = document.getElementById("progress");
+
+// ---- Scramjet setup (same as before) ----
 const { ScramjetController } = $scramjetLoadController();
 
 const scramjet = new ScramjetController({
@@ -34,35 +31,121 @@ scramjet.init();
 
 const connection = new BareMux.BareMuxConnection("/baremux/worker.js");
 
-form.addEventListener("submit", async (event) => {
-	event.preventDefault();
+// ---- Browser state ----
+let frame = null; // ScramjetFrame, created lazily on first navigation
+let transportReady = false;
 
+function setLoading(on) {
+	if (on) {
+		progress.className = "";
+		// restart the CSS transition
+		void progress.offsetWidth;
+		progress.className = "loading";
+		btnReload.classList.add("spinning");
+	} else {
+		progress.className = "done";
+		btnReload.classList.remove("spinning");
+		setTimeout(() => {
+			if (progress.className === "done") progress.className = "";
+		}, 700);
+	}
+}
+
+function showBrowser() {
+	startView.hidden = true;
+	browserView.hidden = false;
+}
+
+function showStart() {
+	browserView.hidden = true;
+	startView.hidden = false;
+}
+
+function reflectUrl(url) {
+	// Keep the address bar in sync unless the user is editing it.
+	if (document.activeElement !== tbAddress) tbAddress.value = url;
 	try {
-		await registerSW();
+		document.title = new URL(url).hostname || "Browser";
+	} catch {
+		document.title = "Browser";
+	}
+}
+
+async function ensureFrame() {
+	if (frame) return frame;
+
+	await registerSW();
+
+	if (!transportReady) {
+		// Split deployment: window.__WISP_URL__ in config.js can point at an
+		// external Wisp backend. Empty = same host (all-in-one).
+		const wispUrl =
+			window.__WISP_URL__ ||
+			(location.protocol === "https:" ? "wss" : "ws") +
+				"://" +
+				location.host +
+				"/wisp/";
+		if ((await connection.getTransport()) !== "/libcurl/index.mjs") {
+			await connection.setTransport("/libcurl/index.mjs", [
+				{ websocket: wispUrl },
+			]);
+		}
+		transportReady = true;
+	}
+
+	frame = scramjet.createFrame();
+	frame.frame.id = "sj-frame";
+	frame.addEventListener("navigate", (e) => {
+		setLoading(true);
+		reflectUrl(e.url);
+	});
+	frame.addEventListener("urlchange", (e) => {
+		reflectUrl(e.url);
+	});
+	frame.frame.addEventListener("load", () => setLoading(false));
+	browserView.appendChild(frame.frame);
+	return frame;
+}
+
+async function navigate(raw) {
+	const value = (raw || "").trim();
+	if (!value) return;
+	const url = search(value, searchEngine.value);
+	try {
+		const f = await ensureFrame();
+		showBrowser();
+		setLoading(true);
+		f.go(url);
 	} catch (err) {
+		showStart();
 		error.textContent = "Failed to register service worker.";
 		errorCode.textContent = err.toString();
 		throw err;
 	}
+}
 
-	const url = search(address.value, searchEngine.value);
-
-	// Split deployment (e.g. frontend on Cloudflare Pages): set
-	// window.__WISP_URL__ in config.js to an external Wisp backend
-	// ("wss://backend.example/wisp/"). Empty = same host (all-in-one).
-	let wispUrl =
-		window.__WISP_URL__ ||
-		(location.protocol === "https:" ? "wss" : "ws") +
-			"://" +
-			location.host +
-			"/wisp/";
-	if ((await connection.getTransport()) !== "/libcurl/index.mjs") {
-		await connection.setTransport("/libcurl/index.mjs", [
-			{ websocket: wispUrl },
-		]);
-	}
-	const frame = scramjet.createFrame();
-	frame.frame.id = "sj-frame";
-	document.body.appendChild(frame.frame);
-	frame.go(url);
+// ---- Start page ----
+form.addEventListener("submit", (event) => {
+	event.preventDefault();
+	navigate(address.value);
 });
+
+document.querySelectorAll(".shortcut").forEach((el) => {
+	el.addEventListener("click", () => navigate(el.dataset.url));
+});
+
+// ---- Toolbar ----
+tbForm.addEventListener("submit", (event) => {
+	event.preventDefault();
+	navigate(tbAddress.value);
+	tbAddress.blur();
+});
+
+tbAddress.addEventListener("focus", () => tbAddress.select());
+
+btnBack.addEventListener("click", () => frame && frame.back());
+btnForward.addEventListener("click", () => frame && frame.forward());
+btnReload.addEventListener("click", () => {
+	if (frame) frame.reload();
+});
+btnHome.addEventListener("click", showStart);

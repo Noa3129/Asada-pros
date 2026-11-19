@@ -6,6 +6,7 @@ import { server as wisp, logging } from "@mercuryworkshop/wisp-js/server";
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 
+import { getIcon } from "./icons.js";
 import { scramjetPath } from "@mercuryworkshop/scramjet/path";
 import { libcurlPath } from "@mercuryworkshop/libcurl-transport";
 import { baremuxPath } from "@mercuryworkshop/bare-mux/node";
@@ -89,6 +90,8 @@ const fastify = Fastify({
 fastify.addHook("onRequest", async (req, reply) => {
 	const url = (req.url || "/").split("?")[0];
 	if (url === "/healthz" || url === "/login" || url === "/auth") return;
+	// PWA assets stay public so "Add to Home Screen" works smoothly.
+	if (url === "/manifest.webmanifest" || url.startsWith("/icons/")) return;
 	if (isAuthed(req.raw || req)) return;
 	if (
 		url.startsWith("/scram/") ||
@@ -101,6 +104,20 @@ fastify.addHook("onRequest", async (req, reply) => {
 });
 
 fastify.get("/healthz", async () => ({ ok: true }));
+
+// PWA icons are generated in code (see icons.js) so no binary files are stored.
+for (const [path, size] of [
+	["/icons/icon-192.png", 192],
+	["/icons/icon-512.png", 512],
+	["/icons/apple-touch-icon.png", 180],
+]) {
+	fastify.get(path, async (req, reply) => {
+		return reply
+			.type("image/png")
+			.header("Cache-Control", "public, max-age=86400")
+			.send(getIcon(size));
+	});
+}
 
 fastify.post("/auth", async (req, reply) => {
 	if (!authEnabled) return reply.code(400).send({ error: "auth not enabled" });
@@ -136,6 +153,10 @@ fastify.register(fastifyStatic, {
 	root: baremuxPath,
 	prefix: "/baremux/",
 	decorateReply: false,
+});
+
+fastify.get("/manifest.webmanifest", async (req, reply) => {
+	return reply.type("application/manifest+json").sendFile("manifest.webmanifest");
 });
 
 // /login serves the login page file from public/

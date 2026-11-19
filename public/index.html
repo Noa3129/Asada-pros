@@ -1,16 +1,28 @@
 <!doctype html>
-<html>
+<html lang="ja">
 	<head>
 		<meta charset="utf-8" />
 		<meta
 			name="viewport"
-			content="width=device-width, initial-scale=1.0, shrink-to-fit=no"
+			content="width=device-width, initial-scale=1.0, viewport-fit=cover"
 		/>
-		<title>Home</title>
-	
+		<title>Browser</title>
+
+		<link rel="manifest" href="/manifest.webmanifest" />
+		<meta name="theme-color" content="#161617" />
+		<meta name="mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta
+			name="apple-mobile-web-app-status-bar-style"
+			content="black-translucent"
+		/>
+		<meta name="apple-mobile-web-app-title" content="Browser" />
+		<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+		<link rel="icon" type="image/png" href="/icons/icon-192.png" />
+
 		<script src="/scram/scramjet.all.js"></script>
 		<script src="/baremux/index.js"></script>
-		
+
 		<link rel="stylesheet" href="index.css" />
 		<script src="config.js" defer></script>
 		<script src="register-sw.js" defer></script>
@@ -19,46 +31,69 @@
 	</head>
 
 	<body>
-		<div title="Scramjet Logo" class="flex-center logo-wrapper header-center">
-			<h1>Home</h1>
-		</div>
-		<div class="flex-center desc left-margin">
-			<p>
-				Scramjet is an experimental interception based web proxy designed to
-				evade internet censorship, bypass arbitrary web browser restrictions and
-				innovate web proxy technologies.
-			</p>
-		</div>
+		<div id="progress"></div>
 
-		<form id="sj-form" class="flex-center">
-			<input
-				id="sj-search-engine"
-				value="https://www.google.com/search?q=%s"
-				type="hidden"
-			/>
-			<input id="sj-address" type="text" placeholder="URL または 検索ワード" />
-		</form>
-		<div class="desc left-margin">
+		<!-- Start page (shown until the first navigation) -->
+		<main id="start-view">
+			<h1 class="start-title">Browser</h1>
+			<form id="sj-form" class="start-form">
+				<input
+					id="sj-search-engine"
+					value="https://www.google.com/search?q=%s"
+					type="hidden"
+				/>
+				<input
+					id="sj-address"
+					type="text"
+					inputmode="url"
+					autocapitalize="off"
+					autocomplete="off"
+					placeholder="検索 または URL を入力"
+				/>
+			</form>
+			<div class="shortcuts">
+				<button class="shortcut" data-url="https://www.google.com">
+					<span class="tile" style="background: #4285f4">G</span>Google
+				</button>
+				<button class="shortcut" data-url="https://www.youtube.com">
+					<span class="tile" style="background: #ff0033">▶</span>YouTube
+				</button>
+				<button class="shortcut" data-url="https://x.com">
+					<span class="tile" style="background: #000">𝕏</span>X
+				</button>
+				<button class="shortcut" data-url="https://ja.wikipedia.org">
+					<span class="tile" style="background: #636363">W</span>Wikipedia
+				</button>
+				<button class="shortcut" data-url="https://duckduckgo.com">
+					<span class="tile" style="background: #de5833">D</span>DuckDuckGo
+				</button>
+				<button class="shortcut" data-url="https://www.bing.com">
+					<span class="tile" style="background: #008373">B</span>Bing
+				</button>
+			</div>
 			<p id="sj-error"></p>
 			<pre id="sj-error-code"></pre>
-		</div>
-		<footer>
-			<div>
-				<a
-					title="The Mercury Workshop GitHub organization"
-					href="https://github.com/MercuryWorkshop"
-					>Mercury Workshop</a
-				>
-				<a
-					title="The example demo app for Scramjet"
-					href="https://github.com/MercuryWorkshop/Scramjet-Demo"
-					>GitHub</a
-				>
-				<a title="License information" href="credits.html">Credits</a>
-			</div>
-			<div>
-				<span>Scramjet &copy; MW 2025</span>
-			</div>
+		</main>
+
+		<!-- Proxied page -->
+		<main id="browser-view" hidden></main>
+
+		<!-- Safari-style bottom toolbar -->
+		<footer id="toolbar">
+			<button id="btn-back" class="tb-btn" aria-label="戻る">‹</button>
+			<button id="btn-forward" class="tb-btn" aria-label="進む">›</button>
+			<form id="tb-form">
+				<input
+					id="tb-address"
+					type="text"
+					inputmode="url"
+					autocapitalize="off"
+					autocomplete="off"
+					placeholder="検索 または URL"
+				/>
+			</form>
+			<button id="btn-reload" class="tb-btn" aria-label="再読み込み">⟳</button>
+			<button id="btn-home" class="tb-btn" aria-label="ホーム">⌂</button>
 		</footer>
 	</body>
 </html>

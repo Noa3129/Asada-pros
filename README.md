@@ -14,6 +14,14 @@ konomi-tokyo/tokyo-proxy-V2 の弱点を直した自家用版。
 | デプロイ | Render / CodeSandbox 手順のみ、compose なし | Dockerfile (healthcheck付き) / docker-compose / render.yaml を整備 |
 | 見た目 | 「東京プロキシ」と分かるタイトル等 | タイトルは中立な "Home" に変更 |
 
+## ブラウザ UI / PWA (v3.1)
+- Safari 風ブラウザ UI: 下部ツールバー (戻る / 進む / URL・検索バー / 再読み込み / ホーム)、
+  上部プログレスバー、スタートページ (検索バー + ショートカット6件)
+- 操作は ScramjetFrame の公式 API (go / back / forward / reload / urlchange イベント) を使用
+- PWA 対応: manifest (standalone)、ホーム画面アイコンは `src/icons.js` が実行時に
+  PNG 生成 (コンパス柄、リポジトリにバイナリを置かないため)。iPad は Safari の
+  共有 →「ホーム画面に追加」でアプリ風に起動できる
+
 ## 起動
 ```bash
 # Docker (推奨)
