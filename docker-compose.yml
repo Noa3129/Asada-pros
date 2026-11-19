@@ -1,0 +1,17 @@
+# 東京プロキシ改善版 (V3) - Scramjet + Wisp
+#   docker compose up -d --build
+#   -> http://<server>:8080/
+# iPad Safari needs HTTPS for the Service Worker (except localhost):
+# put Tailscale Serve/Funnel or Cloudflare Tunnel in front for real use.
+services:
+  tokyo-proxy-v3:
+    build: .
+    container_name: tokyo-proxy-v3
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      # Set a long random password before exposing this beyond your LAN.
+      # Empty = no password gate (open instance).
+      ACCESS_PASSWORD: "${ACCESS_PASSWORD:-}"
+    ports:
+      - "8080:8080"

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ja">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Home</title>
+		<style>
+			body { font-family: sans-serif; background: #111; color: #eee; display: flex; min-height: 100vh; margin: 0; align-items: center; justify-content: center; }
+			main { width: min(320px, 90vw); }
+			input, button { width: 100%; padding: 12px; margin-top: 8px; box-sizing: border-box; border-radius: 6px; border: 1px solid #444; background: #222; color: #eee; font-size: 16px; }
+			button { background: #2b6cb0; border: none; cursor: pointer; }
+			#err { color: #ff6666; min-height: 1.2em; }
+		</style>
+	</head>
+	<body>
+		<main>
+			<p>パスワードを入力してください</p>
+			<form id="f">
+				<input id="pw" type="password" autocomplete="current-password" placeholder="Password" />
+				<button type="submit">開く</button>
+			</form>
+			<p id="err"></p>
+		</main>
+		<script>
+			document.getElementById("f").addEventListener("submit", async (e) => {
+				e.preventDefault();
+				const res = await fetch("/auth", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ password: document.getElementById("pw").value }),
+				});
+				if (res.ok) location.href = "/";
+				else document.getElementById("err").textContent = "パスワードが違います";
+			});
+		</script>
+	</body>
+</html>
