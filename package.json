@@ -1,6 +1,6 @@
 {
 	"name": "tokyo-proxy-v3",
-	"version": "3.0.0",
+	"version": "3.1.1",
 	"description": "Improved Tokyo Proxy: Scramjet + Wisp, password gate, LAN SSRF hardening. Based on MercuryWorkshop/scramjet-app (AGPL-3.0).",
 	"type": "module",
 	"engines": {

@@ -15,6 +15,10 @@ konomi-tokyo/tokyo-proxy-V2 の弱点を直した自家用版。
 | 見た目 | 「東京プロキシ」と分かるタイトル等 | タイトルは中立な "Home" に変更 |
 
 ## ブラウザ UI / PWA (v3.1)
+- v3.1.1: リロード処理を堅牢化。ScramjetFrame.reload() はフレーム内ドキュメントの
+  location.reload() で、エラーページや停止した読み込みをそのまま再取得してしまうため、
+  現在の実URLへ encode し直して location.replace() で再遷移する方式に変更
+  (履歴を増やさないので「戻る」の挙動は不変)。失敗時は go() → reload() の順にフォールバック
 - Safari 風ブラウザ UI: 下部ツールバー (戻る / 進む / URL・検索バー / 再読み込み / ホーム)、
   上部プログレスバー、スタートページ (検索バー + ショートカット6件)
 - 操作は ScramjetFrame の公式 API (go / back / forward / reload / urlchange イベント) を使用

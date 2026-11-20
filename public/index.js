@@ -34,6 +34,8 @@ const connection = new BareMux.BareMuxConnection("/baremux/worker.js");
 // ---- Browser state ----
 let frame = null; // ScramjetFrame, created lazily on first navigation
 let transportReady = false;
+let currentUrl = ""; // last known real (unproxified) URL, from frame events
+let loadingTimer = null;
 
 function setLoading(on) {
 	if (on) {
@@ -42,7 +44,11 @@ function setLoading(on) {
 		void progress.offsetWidth;
 		progress.className = "loading";
 		btnReload.classList.add("spinning");
+		// Safety net: never leave the spinner stuck if a load event is missed.
+		clearTimeout(loadingTimer);
+		loadingTimer = setTimeout(() => setLoading(false), 20000);
 	} else {
+		clearTimeout(loadingTimer);
 		progress.className = "done";
 		btnReload.classList.remove("spinning");
 		setTimeout(() => {
@@ -62,6 +68,7 @@ function showStart() {
 }
 
 function reflectUrl(url) {
+	currentUrl = url;
 	// Keep the address bar in sync unless the user is editing it.
 	if (document.activeElement !== tbAddress) tbAddress.value = url;
 	try {
@@ -146,6 +153,28 @@ tbAddress.addEventListener("focus", () => tbAddress.select());
 btnBack.addEventListener("click", () => frame && frame.back());
 btnForward.addEventListener("click", () => frame && frame.forward());
 btnReload.addEventListener("click", () => {
-	if (frame) frame.reload();
+	if (!frame) return;
+	setLoading(true);
+	// ScramjetFrame.reload() is just contentWindow.location.reload(), which
+	// re-requests whatever document the frame currently holds — if that
+	// document is a proxy error page or a stalled load, reload just brings
+	// the error back. Instead, re-navigate to the current real URL through
+	// the normal encode path. location.replace() is used so the reload
+	// does not add a duplicate history entry (Back keeps working as-is).
+	try {
+		if (currentUrl) {
+			frame.frame.contentWindow.location.replace(
+				scramjet.encodeUrl(currentUrl)
+			);
+		} else {
+			frame.reload();
+		}
+	} catch {
+		try {
+			frame.go(currentUrl);
+		} catch {
+			frame.reload();
+		}
+	}
 });
 btnHome.addEventListener("click", showStart);
