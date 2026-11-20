@@ -27,9 +27,56 @@ const scramjet = new ScramjetController({
 	},
 });
 
-scramjet.init();
+// Keep the init promise: the first navigation must wait for the engine to
+// finish writing its config, otherwise it can race and fail (audit #1).
+const initPromise = scramjet.init();
+initPromise.catch(() => {}); // surfaced properly in ensureFrame()
 
 const connection = new BareMux.BareMuxConnection("/baremux/worker.js");
+
+// Downloads from proxied sites arrive as a controller "download" event with
+// a body stream. If nobody consumes the stream, the service worker fetch
+// never completes and the download silently hangs (audit #3).
+scramjet.addEventListener("download", async (e) => {
+	const dl = e.download;
+	try {
+		let blob;
+		try {
+			blob = await new Response(dl.body).blob();
+		} catch {
+			const reader = dl.body.getReader();
+			const chunks = [];
+			for (;;) {
+				const { done, value } = await reader.read();
+				if (done) break;
+				chunks.push(value);
+			}
+			blob = new Blob(chunks, { type: dl.type || "" });
+		}
+		if (dl.type && !blob.type) blob = new Blob([blob], { type: dl.type });
+		let name = dl.filename || "download";
+		if (!dl.filename && dl.url) {
+			try {
+				name =
+					decodeURIComponent(new URL(dl.url).pathname.split("/").pop()) ||
+					"download";
+			} catch {}
+		}
+		const a = document.createElement("a");
+		a.href = URL.createObjectURL(blob);
+		a.download = name;
+		a.target = "_blank";
+		a.rel = "noopener";
+		document.body.appendChild(a);
+		a.click();
+		setTimeout(() => {
+			URL.revokeObjectURL(a.href);
+			a.remove();
+		}, 10000);
+	} catch (err) {
+		console.error("download failed", err);
+	}
+});
 
 // ---- Browser state ----
 let frame = null; // ScramjetFrame, created lazily on first navigation
@@ -43,20 +90,32 @@ let loadingTimer = null;
 // the socket dies and every later navigation fails with a proxy error page
 // until the app is restarted. Recreating the transport rebuilds the socket,
 // so we do that whenever the old one may have gone stale.
-async function applyTransport() {
-	// Split deployment: window.__WISP_URL__ in config.js can point at an
-	// external Wisp backend. Empty = same host (all-in-one).
-	const wispUrl =
-		window.__WISP_URL__ ||
-		(location.protocol === "https:" ? "wss" : "ws") +
-			"://" +
-			location.host +
-			"/wisp/";
-	await connection.setTransport("/libcurl/index.mjs", [
-		{ websocket: wispUrl },
-	]);
-	transportReady = true;
-	lastTransportAt = Date.now();
+// Rebuilds are deduplicated through one shared promise: navigation, reload
+// and the lifecycle handlers can all ask for a rebuild at the same time, and
+// concurrent setTransport() calls race each other (audit #6).
+let transportPromise = null;
+function applyTransport() {
+	if (transportPromise) return transportPromise;
+	transportPromise = (async () => {
+		// Split deployment: window.__WISP_URL__ in config.js can point at an
+		// external Wisp backend. Empty = same host (all-in-one).
+		const wispUrl =
+			window.__WISP_URL__ ||
+			(location.protocol === "https:" ? "wss" : "ws") +
+				"://" +
+				location.host +
+				"/wisp/";
+		await connection.setTransport("/libcurl/index.mjs", [
+			{ websocket: wispUrl },
+		]);
+		transportReady = true;
+		lastTransportAt = Date.now();
+	})();
+	const clear = () => {
+		transportPromise = null;
+	};
+	transportPromise.then(clear, clear);
+	return transportPromise;
 }
 
 function transportStale() {
@@ -108,24 +167,44 @@ function reflectUrl(url) {
 	}
 }
 
-async function ensureFrame() {
+// Frame creation is cached as a promise: concurrent navigate() calls (e.g.
+// a double-tap) must not both pass the null check and create two frames
+// (audit #5).
+let framePromise = null;
+function ensureFrame() {
 	if (frame) return frame;
+	if (!framePromise) {
+		framePromise = (async () => {
+			try {
+				await registerSW();
+			} catch (e) {
+				throw new Error("Service worker registration failed: " + e);
+			}
+			try {
+				await initPromise;
+			} catch (e) {
+				throw new Error("Proxy engine initialization failed: " + e);
+			}
+			await ensureTransport();
 
-	await registerSW();
-	await ensureTransport();
-
-	frame = scramjet.createFrame();
-	frame.frame.id = "sj-frame";
-	frame.addEventListener("navigate", (e) => {
-		setLoading(true);
-		reflectUrl(e.url);
-	});
-	frame.addEventListener("urlchange", (e) => {
-		reflectUrl(e.url);
-	});
-	frame.frame.addEventListener("load", () => setLoading(false));
-	browserView.appendChild(frame.frame);
-	return frame;
+			frame = scramjet.createFrame();
+			frame.frame.id = "sj-frame";
+			frame.addEventListener("navigate", (e) => {
+				setLoading(true);
+				reflectUrl(e.url);
+			});
+			frame.addEventListener("urlchange", (e) => {
+				reflectUrl(e.url);
+			});
+			frame.frame.addEventListener("load", () => setLoading(false));
+			browserView.appendChild(frame.frame);
+			return frame;
+		})();
+		framePromise.catch(() => {
+			framePromise = null; // allow retry after a failed setup
+		});
+	}
+	return framePromise;
 }
 
 async function navigate(raw) {
@@ -139,10 +218,13 @@ async function navigate(raw) {
 		setLoading(true);
 		f.go(url);
 	} catch (err) {
+		// Do not rethrow: the form handlers call navigate() without a catch,
+		// and a rethrow would surface as an unhandled rejection (audit #6).
 		showStart();
-		error.textContent = "Failed to register service worker.";
-		errorCode.textContent = err.toString();
-		throw err;
+		setLoading(false);
+		error.textContent = err && err.message ? err.message : "Failed to start.";
+		errorCode.textContent = String(err);
+		console.error(err);
 	}
 }
 
@@ -170,14 +252,14 @@ btnForward.addEventListener("click", () => frame && frame.forward());
 btnReload.addEventListener("click", async () => {
 	if (!frame) return;
 	setLoading(true);
-	await ensureTransport();
-	// ScramjetFrame.reload() is just contentWindow.location.reload(), which
-	// re-requests whatever document the frame currently holds — if that
-	// document is a proxy error page or a stalled load, reload just brings
-	// the error back. Instead, re-navigate to the current real URL through
-	// the normal encode path. location.replace() is used so the reload
-	// does not add a duplicate history entry (Back keeps working as-is).
 	try {
+		await ensureTransport();
+		// ScramjetFrame.reload() is just contentWindow.location.reload(), which
+		// re-requests whatever document the frame currently holds — if that
+		// document is a proxy error page or a stalled load, reload just brings
+		// the error back. Instead, re-navigate to the current real URL through
+		// the normal encode path. location.replace() is used so the reload
+		// does not add a duplicate history entry (Back keeps working as-is).
 		if (currentUrl) {
 			frame.frame.contentWindow.location.replace(
 				scramjet.encodeUrl(currentUrl)
@@ -186,10 +268,13 @@ btnReload.addEventListener("click", async () => {
 			frame.reload();
 		}
 	} catch {
+		setLoading(false);
 		try {
 			frame.go(currentUrl);
 		} catch {
-			frame.reload();
+			try {
+				frame.reload();
+			} catch {}
 		}
 	}
 });

@@ -63,8 +63,12 @@ Object.assign(wisp.options, {
 		/\.local$/i,
 		/\.internal$/i,
 		/\.home\.arpa$/i,
-		/^example\.com$/i,
 	],
+	// Cap concurrent streams so one heavy page (or one abusive client)
+	// cannot exhaust the small free instance (audit #7). Upstream default
+	// is unlimited (-1).
+	stream_limit_total: 256,
+	stream_limit_per_host: 64,
 	dns_servers: ["1.1.1.1", "1.0.0.1"],
 });
 
@@ -125,9 +129,12 @@ fastify.post("/auth", async (req, reply) => {
 	if (!passwordMatches(pw)) return reply.code(401).send({ error: "wrong password" });
 	const secure =
 		req.headers["x-forwarded-proto"] === "https" || req.protocol === "https";
+	// 90 days: when the cookie expires mid-session the Wisp upgrade is
+	// rejected silently and every navigation fails until the app is
+	// reopened and the user logs in again (audit #4).
 	reply.header(
 		"Set-Cookie",
-		`tp_auth=${authToken}; HttpOnly; Path=/; SameSite=Lax; Max-Age=604800${secure ? "; Secure" : ""}`
+		`tp_auth=${authToken}; HttpOnly; Path=/; SameSite=Lax; Max-Age=7776000${secure ? "; Secure" : ""}`
 	);
 	return { ok: true };
 });

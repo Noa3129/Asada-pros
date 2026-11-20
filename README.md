@@ -15,6 +15,11 @@ konomi-tokyo/tokyo-proxy-V2 の弱点を直した自家用版。
 | 見た目 | 「東京プロキシ」と分かるタイトル等 | タイトルは中立な "Home" に変更 |
 
 ## ブラウザ UI / PWA (v3.1)
+- v3.1.3: AUDIT.md の上位項目（#1〜#7、#13）を一括修正。Scramjet 初期化の
+  await 化とエラー表示の分離、SW fetch の例外フォールバック（config 読込の
+  リトライ＋エラー応答）、ダウンロードイベントの購読（従来は無言でハング）、
+  認証 Cookie を90日に延長、フレーム生成と transport 再構築のレース解消、
+  Wisp ストリーム上限（total 256 / host 64）、example.com のブラックリスト解除
 - v3.1.2: Wisp 接続の自己回復を追加。libcurl transport は Wisp の WebSocket を
   1本張りっぱなしで自動再接続がなく、Render 無料枠のスリープ等で切れると以降の
   遷移が全てプロキシエラー (Uh oh!) になりアプリ再起動まで直らなかった。
