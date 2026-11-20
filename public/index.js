@@ -34,8 +34,38 @@ const connection = new BareMux.BareMuxConnection("/baremux/worker.js");
 // ---- Browser state ----
 let frame = null; // ScramjetFrame, created lazily on first navigation
 let transportReady = false;
+let lastTransportAt = 0; // when the Wisp transport was last (re)created
 let currentUrl = ""; // last known real (unproxified) URL, from frame events
 let loadingTimer = null;
+
+// The libcurl transport holds ONE Wisp WebSocket for everything, and it has
+// no auto-reconnect: when the server sleeps (Render free tier, ~15 min idle)
+// the socket dies and every later navigation fails with a proxy error page
+// until the app is restarted. Recreating the transport rebuilds the socket,
+// so we do that whenever the old one may have gone stale.
+async function applyTransport() {
+	// Split deployment: window.__WISP_URL__ in config.js can point at an
+	// external Wisp backend. Empty = same host (all-in-one).
+	const wispUrl =
+		window.__WISP_URL__ ||
+		(location.protocol === "https:" ? "wss" : "ws") +
+			"://" +
+			location.host +
+			"/wisp/";
+	await connection.setTransport("/libcurl/index.mjs", [
+		{ websocket: wispUrl },
+	]);
+	transportReady = true;
+	lastTransportAt = Date.now();
+}
+
+function transportStale() {
+	return transportReady && Date.now() - lastTransportAt > 120000;
+}
+
+async function ensureTransport() {
+	if (!transportReady || transportStale()) await applyTransport();
+}
 
 function setLoading(on) {
 	if (on) {
@@ -82,23 +112,7 @@ async function ensureFrame() {
 	if (frame) return frame;
 
 	await registerSW();
-
-	if (!transportReady) {
-		// Split deployment: window.__WISP_URL__ in config.js can point at an
-		// external Wisp backend. Empty = same host (all-in-one).
-		const wispUrl =
-			window.__WISP_URL__ ||
-			(location.protocol === "https:" ? "wss" : "ws") +
-				"://" +
-				location.host +
-				"/wisp/";
-		if ((await connection.getTransport()) !== "/libcurl/index.mjs") {
-			await connection.setTransport("/libcurl/index.mjs", [
-				{ websocket: wispUrl },
-			]);
-		}
-		transportReady = true;
-	}
+	await ensureTransport();
 
 	frame = scramjet.createFrame();
 	frame.frame.id = "sj-frame";
@@ -120,6 +134,7 @@ async function navigate(raw) {
 	const url = search(value, searchEngine.value);
 	try {
 		const f = await ensureFrame();
+		await ensureTransport();
 		showBrowser();
 		setLoading(true);
 		f.go(url);
@@ -152,9 +167,10 @@ tbAddress.addEventListener("focus", () => tbAddress.select());
 
 btnBack.addEventListener("click", () => frame && frame.back());
 btnForward.addEventListener("click", () => frame && frame.forward());
-btnReload.addEventListener("click", () => {
+btnReload.addEventListener("click", async () => {
 	if (!frame) return;
 	setLoading(true);
+	await ensureTransport();
 	// ScramjetFrame.reload() is just contentWindow.location.reload(), which
 	// re-requests whatever document the frame currently holds — if that
 	// document is a proxy error page or a stalled load, reload just brings
@@ -178,3 +194,21 @@ btnReload.addEventListener("click", () => {
 	}
 });
 btnHome.addEventListener("click", showStart);
+
+// Self-healing: rebuild the Wisp connection when the app comes back to the
+// foreground after a while, or when the network returns. This covers the
+// "server slept while the app was idle" case without an app restart.
+let hiddenAt = null;
+document.addEventListener("visibilitychange", () => {
+	if (document.hidden) {
+		hiddenAt = Date.now();
+		return;
+	}
+	if (hiddenAt && Date.now() - hiddenAt > 60000) {
+		hiddenAt = null;
+		applyTransport().catch(() => {});
+	}
+});
+window.addEventListener("online", () => {
+	if (transportReady) applyTransport().catch(() => {});
+});
