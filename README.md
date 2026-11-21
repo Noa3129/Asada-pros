@@ -15,6 +15,9 @@ konomi-tokyo/tokyo-proxy-V2 の弱点を直した自家用版。
 | 見た目 | 「東京プロキシ」と分かるタイトル等 | タイトルは中立な "Home" に変更 |
 
 ## ブラウザ UI / PWA (v3.1)
+- v3.1.4: 既定の検索エンジンを Google から DuckDuckGo に変更。Google が
+  Render の IP からの TLS ハンドシェイクを弾く事象（libcurl error 35）が
+  出るため。Google のショートカットタイルは残置（直接開く分には任意）
 - v3.1.3: AUDIT.md の上位項目（#1〜#7、#13）を一括修正。Scramjet 初期化の
   await 化とエラー表示の分離、SW fetch の例外フォールバック（config 読込の
   リトライ＋エラー応答）、ダウンロードイベントの購読（従来は無言でハング）、
